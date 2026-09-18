@@ -1,0 +1,37 @@
+<!DOCTYPE html>
+<!-- LXR-LAWMAN | LXR UI Kit | © 2026 iBoss21 / LXRCore | lxrcore.com -->
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <title>The desk</title>
+  <link rel="stylesheet" href="lxr-ui.css">
+  <link rel="stylesheet" href="style.css">
+</head>
+<body class="lxr">
+  <div id="app" class="lxr-hidden">
+    <header class="lw-top lxr-hit">
+      <div class="lw-brand">
+        <img class="lw-logo" src="img/lxrcore-logo.png" alt="">
+        <div><span class="lxr-mono lxr-t-ash" data-l="desk_kicker"></span><h1 class="lxr-cut lw-title" id="station-label"></h1></div>
+      </div>
+      <div class="lw-hints lxr-mono lxr-t-smoke"><span class="lxr-key">Backspace</span><span data-l="hint_close"></span></div>
+    </header>
+
+    <aside class="lw-side lxr-hit">
+      <div class="lw-side__head lxr-rule-b"><span class="lxr-mono lxr-t-ash" data-l="badge"></span></div>
+      <div class="lw-badge"><div class="lw-badge__job lxr-cut" id="job-label"></div><div class="lxr-mono lxr-t-smoke" id="grade"></div><button class="lxr-btn lw-duty" id="btn-duty"></button></div>
+      <div class="lw-side__head lxr-rule-b"><span class="lxr-mono lxr-t-ash" data-l="on_duty"></span><span class="lxr-grow"></span><span class="lxr-mono lxr-t-smoke" id="duty-count"></span></div>
+      <div class="lw-roster" id="roster"></div>
+    </aside>
+
+    <section class="lw-main lxr-hit">
+      <div class="lw-main__head lxr-rule-b"><span class="lxr-mono lxr-t-ash" data-l="board"></span><span class="lxr-grow"></span><span class="lxr-mono lxr-t-smoke" id="board-count"></span></div>
+      <div class="lw-post" id="post"></div>
+      <div class="lw-rows" id="board"></div>
+    </section>
+
+    <footer class="lw-foot lxr-hit"><span class="lxr-grow"></span><button class="lxr-btn lxr-btn-ghost" id="btn-close" data-l="close"></button></footer>
+  </div>
+  <script src="app.js"></script>
+</body>
+</html>

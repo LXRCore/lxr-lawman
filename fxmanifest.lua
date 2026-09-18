@@ -1,83 +1,52 @@
 --[[
-    ██╗     ██╗  ██╗██████╗        ██████╗ ██████╗ ██████╗ ███████╗
-    ██║     ╚██╗██╔╝██╔══██╗      ██╔════╝██╔═══██╗██╔══██╗██╔════╝
-    ██║      ╚███╔╝ ██████╔╝█████╗██║     ██║   ██║██████╔╝█████╗  
-    ██║      ██╔██╗ ██╔══██╗╚════╝██║     ██║   ██║██╔══██╗██╔══╝  
-    ███████╗██╔╝ ██╗██║  ██║      ╚██████╗╚██████╔╝██║  ██║███████╗
-    ╚══════╝╚═╝  ╚═╝╚═╝  ╚═╝       ╚═════╝ ╚═════╝ ╚═╝  ╚═╝╚══════╝
+    LXR Core - Lawman
 
-    🐺 LXR Police Job - FXManifest
+    Brand:       LXRCore — Lux Empire eXperience RedM Core
+    Product:     wolves.land / The Land of Wolves
+    Developer:   iBoss21 / LXRCore
+    Website:     https://www.lxrcore.com
+    Discord:     https://discord.gg/ZHMKVYyhBa (development)
+    GitHub:      https://github.com/LXRCore
 
-    ═══════════════════════════════════════════════════════════════════════════════
-    RESOURCE INFORMATION
-    ═══════════════════════════════════════════════════════════════════════════════
+    Version: 1.0.0
+    Performance Target: 0.00 ms idle
 
-    Resource Name:  lxr-policejob
-    Version:        1.0.0
-    Author:         iBoss21 / The Lux Empire
-    Description:    Full-featured police job system for RedM with evidence, armory,
-                    handcuffs, escort, duty management, and more.
+    Framework Support:
+    - LXR Core v3 (Native — GetCoreObject / GetLXR)
 
-    Server:         The Land of Wolves 🐺
-    Website:        https://www.wolves.land
-    Discord:        https://discord.gg/CrKcWdfd3A
-
-    ═══════════════════════════════════════════════════════════════════════════════
-    FRAMEWORK SUPPORT
-    ═══════════════════════════════════════════════════════════════════════════════
-
-    Primary:
-    - LXR Core (lxr-core)
-    - RSG Core (rsg-core)
-
-    Supported:
-    - VORP Core (vorp_core)
-
-    Optional (if detected):
-    - RedEM:RP (redem_roleplay)
-    - QBR Core (qbr-core)
-    - QR Core (qr-core)
-    - Standalone (no framework)
-
-    ═══════════════════════════════════════════════════════════════════════════════
-
-    © 2026 iBoss21 / The Lux Empire | wolves.land | All Rights Reserved
+    © 2026 iBoss21 / LXRCore | lxrcore.com | All Rights Reserved
 ]]
 
 fx_version 'cerulean'
 game 'rdr3'
-
 rdr3_warning 'I acknowledge that this is a prerelease build of RedM, and I am aware my resources *will* become incompatible once RedM ships.'
-
--- Resource Metadata
-name        'LXR Police Job'
-author      'iBoss21 / The Lux Empire'
-description 'Full-featured police job system for RedM with evidence, armory, handcuffs, escort, and duty management'
-version     '1.0.0'
-
--- Lua 5.4
 lua54 'yes'
 
+name 'lxr-lawman'
+author 'iBoss21 / LXRCore'
+description 'LXRCore v3 lawman: every law job of the registry — duty, cuffs, escort, search, seizure, fines to the society book, Sisika sentences, the bounty board'
+version '3.0.0'
+repository 'https://github.com/LXRCore/lxr-lawman'
+
 shared_scripts {
-'@lxr-core/shared/locale.lua',
-'locales/en.lua',
-'locales/*.lua',
+    'shared/locale.lua',
+    'locales/*.lua',
     'config.lua',
+    'shared/rules.lua',
 }
 
-client_scripts {
-'client/main.lua',
---'client/camera.lua',
-'client/interactions.lua',
-'client/job.lua',
---'client/heli.lua',
---'client/anpr.lua',
-'client/evidence.lua',
-'client/objects.lua',
---'client/tracker.lua'
+client_script 'client/main.lua'
+server_script 'server/main.lua'
+
+ui_page 'html/index.html'
+
+files {
+    'html/index.html',
+    'html/lxr-ui.css',
+    'html/style.css',
+    'html/fonts/*.woff2',
+    'html/app.js',
+    'html/img/*.png',
 }
 
-server_scripts {
-'@oxmysql/lib/MySQL.lua',
-'server/main.lua'
-}
+dependencies { 'lxr-core', 'lxr-nui', 'lxr-inventory', 'lxr-interact' }

@@ -1,658 +1,371 @@
---[[
-    ██╗     ██╗  ██╗██████╗        ██████╗ ██████╗ ██████╗ ███████╗
-    ██║     ╚██╗██╔╝██╔══██╗      ██╔════╝██╔═══██╗██╔══██╗██╔════╝
-    ██║      ╚███╔╝ ██████╔╝█████╗██║     ██║   ██║██████╔╝█████╗  
-    ██║      ██╔██╗ ██╔══██╗╚════╝██║     ██║   ██║██╔══██╗██╔══╝  
-    ███████╗██╔╝ ██╗██║  ██║      ╚██████╗╚██████╔╝██║  ██║███████╗
-    ╚══════╝╚═╝  ╚═╝╚═╝  ╚═╝       ╚═════╝ ╚═════╝ ╚═╝  ╚═╝╚══════╝
+--[[ ═══════════════════════════════════════════════════════════════════════════
+     LXR-LAWMAN — Server: duty, cuffs, search, fines, jail, bounties
+     ═══════════════════════════════════════════════════════════════════════════
+     Every power is checked here: the officer is the law and on duty, the
+     target is within reach, the amount is lawful. State lives in the core's
+     metadata (ishandcuffed, injail) so it survives relogs; bounties in
+     lxr_bounties; money moves through the core and lxr-bank.
+     ═══════════════════════════════════════════════════════════════════════════
+     © 2026 iBoss21 / LXRCore — All Rights Reserved
+     ═══════════════════════════════════════════════════════════════════════════ ]]
 
-    🐺 LXR Police Job - Server: Main
+local LXRCore = exports['lxr-core']:GetCoreObject()
+local LXR = exports['lxr-core']:GetLXR()
+local L = LXRLawman
+local Inventory = LXRCore.Inventory
+local RES = GetCurrentResourceName()
+local buckets = {}
+local escorts = {}     -- target src → officer src
 
-    ═══════════════════════════════════════════════════════════════════════════════
-    SERVER INFORMATION
-    ═══════════════════════════════════════════════════════════════════════════════
-
-    Server:    The Land of Wolves 🐺
-    Developer: iBoss21 / The Lux Empire
-    Website:   https://www.wolves.land
-    Discord:   https://discord.gg/CrKcWdfd3A
-    Store:     https://theluxempire.tebex.io
-
-    © 2026 iBoss21 / The Lux Empire | wolves.land | All Rights Reserved
-    ═══════════════════════════════════════════════════════════════════════════════
-]]
--- Variables
-local Plates = {}
-local PlayerStatus = {}
-local Evidences ={}
-local Objects = {}
-local sharedItems = exports['lxr-core']:GetItems()
-
--- Functions
-local function UpdateBlips()
-    local dutyPlayers = {}
-    local players = exports['lxr-core']:GetLXRPlayers()
-    for k, v in pairs(players) do
-        if (Config.BlipsJobs[v.PlayerData.job.name]) and v.PlayerData.job.onduty then
-            local coords = GetEntityCoords(GetPlayerPed(v.PlayerData.source))
-            local heading = GetEntityHeading(GetPlayerPed(v.PlayerData.source))
-            dutyPlayers[#dutyPlayers+1] = {
-                source = v.PlayerData.source,
-                label = v.PlayerData.metadata["callsign"],
-                job = v.PlayerData.job.name,
-                location = {
-                    x = coords.x,
-                    y = coords.y,
-                    z = coords.z,
-                    w = heading
-                }
-            }
-        end
-    end
-    TriggerClientEvent("police:client:UpdateBlips", -1, dutyPlayers)
+local function limited(src)
+    local b = buckets[src]
+    local now = GetGameTimer()
+    if not b or now - b.at > Config.Security.rateLimit.windowMs then b = { at = now, n = 0 } buckets[src] = b end
+    b.n = b.n + 1
+    return b.n > Config.Security.rateLimit.burst
 end
-
-
-local function CreateUniqueId(_table)
-    local id = math.random(10000, 99999)
-    while _table[id] do
-        id = math.random(10000, 99999)
-    end
-    return id
+local function player(src) return LXRCore.Functions.GetPlayer(src) end
+local function notify(src, key, kind, vars) LXRCore.Notify(src, Lang:t(key, vars), kind or 'info') end
+local function near(a, b, dist)
+    local pa, pb = GetPlayerPed(a), GetPlayerPed(b)
+    if pa == 0 or pb == 0 then return false end
+    return #(GetEntityCoords(pa) - GetEntityCoords(pb)) <= (dist or Config.Security.maxDistance)
 end
-
-local function DnaHash(s)
-    local h = string.gsub(s, '.', function(c)
-        return string.format('%02x', string.byte(c))
-    end)
-    return h
-end
-
-local function IsVehicleOwned(plate)
-    local result = MySQL.scalar.await('SELECT plate FROM player_vehicles WHERE plate = ?', {plate})
-    return result
-end
-
-local function GetCurrentCops()
-    local amount = 0
-    local players = exports['lxr-core']:GetLXRPlayers()
-    for k, v in pairs(players) do
-        if Config.Law[v.PlayerData.job.name] and v.PlayerData.job.onduty then
-            amount = amount + 1
-        end
-    end
-    return amount
-end
-
-local function DnaHash(s)
-    local h = string.gsub(s, ".", function(c)
-        return string.format("%02x", string.byte(c))
-    end)
-    return h
-end
-
--- Commands
-exports['lxr-core']:AddCommand("pobject", Lang:t("commands.place_object"), {{name = "type",help = Lang:t("info.poobject_object")}}, true, function(source, args)
-    local src = source
-    local Player = exports['lxr-core']:GetPlayer(src)
-    local type = args[1]:lower()
-    if Player.PlayerData.job.name == "police" and Player.PlayerData.job.onduty then
-        if type == "cone" then
-            TriggerClientEvent("police:client:spawnCone", src)
-        elseif type == "barrier" then
-            TriggerClientEvent("police:client:spawnBarrier", src)
-        elseif type == "roadsign" then
-            TriggerClientEvent("police:client:spawnRoadSign", src)
-        elseif type == "tent" then
-            TriggerClientEvent("police:client:spawnTent", src)
-        elseif type == "light" then
-            TriggerClientEvent("police:client:spawnLight", src)
-        elseif type == "delete" then
-            TriggerClientEvent("police:client:deleteObject", src)
-        end
-    else
-        TriggerClientEvent('LXRCore:Notify', src, 9, Lang:t("error.on_duty_police_only"), 5000, 0, 'mp_lobby_textures', 'cross', 'COLOR_WHITE')
-    end
-end)
-
-exports['lxr-core']:AddCommand("cuff", Lang:t("commands.cuff_player"), {}, false, function(source, args)
-    local src = source
-    local Player = exports['lxr-core']:GetPlayer(src)
-    if Player.PlayerData.job.name == "police" and Player.PlayerData.job.onduty then
-        TriggerClientEvent("police:client:CuffPlayer", src)
-    else
-        TriggerClientEvent('LXRCore:Notify', src, 9, Lang:t("error.on_duty_police_only"), 5000, 0, 'mp_lobby_textures', 'cross', 'COLOR_WHITE')
-    end
-end)
-
-exports['lxr-core']:AddCommand("escort", Lang:t("commands.escort"), {}, false, function(source, args)
-    local src = source
-    TriggerClientEvent("police:client:EscortPlayer", src)
-end)
-
-exports['lxr-core']:AddCommand("callsign", Lang:t("commands.callsign"), {{name = "name", help = Lang:t('info.callsign_name')}}, false, function(source, args)
-    local src = source
-    local Player = exports['lxr-core']:GetPlayer(src)
-    Player.Functions.SetMetaData("callsign", table.concat(args, " "))
-end)
-
-exports['lxr-core']:AddCommand("clearcasings", Lang:t("commands.clear_casign"), {}, false, function(source)
-    local src = source
-    local Player = exports['lxr-core']:GetPlayer(src)
-    if Player.PlayerData.job.name == "police" and Player.PlayerData.job.onduty then
-        TriggerClientEvent("evidence:client:ClearCasingsInArea", src)
-    else
-        TriggerClientEvent('LXRCore:Notify', src, 9, Lang:t("error.on_duty_police_only"), 5000, 0, 'mp_lobby_textures', 'cross', 'COLOR_WHITE')
-    end
-end)
-
-exports['lxr-core']:AddCommand("jail", Lang:t("commands.jail_player"), {{name = "id", help = Lang:t('info.player_id')}, {name = "time", help = Lang:t('info.jail_time')}}, true, function(source, args)
-    local src = source
-    local Player = exports['lxr-core']:GetPlayer(src)
-    if Player.PlayerData.job.name == "police" and Player.PlayerData.job.onduty then
-        local playerId = tonumber(args[1])
-        local time = tonumber(args[2])
-        if time > 0 then
-            TriggerClientEvent("police:client:JailCommand", src, playerId, time)
-        else
-            TriggerClientEvent('LXRCore:Notify', src, 9, Lang:t('info.jail_time_no'), 5000, 0, 'mp_lobby_textures', 'cross', 'COLOR_WHITE')
-        end
-    else
-        TriggerClientEvent('LXRCore:Notify', src, 9, Lang:t("error.on_duty_police_only"), 5000, 0, 'mp_lobby_textures', 'cross', 'COLOR_WHITE')
-    end
-end)
-
-exports['lxr-core']:AddCommand("unjail", Lang:t("commands.unjail_player"), {{name = "id", help = Lang:t('info.player_id')}}, true, function(source, args)
-    local src = source
-    local Player = exports['lxr-core']:GetPlayer(src)
-    if Player.PlayerData.job.name == "police" and Player.PlayerData.job.onduty then
-        local playerId = tonumber(args[1])
-        TriggerClientEvent("prison:client:UnjailPerson", playerId)
-    else
-        TriggerClientEvent('LXRCore:Notify', src, 9, Lang:t("error.on_duty_police_only"), 5000, 0, 'mp_lobby_textures', 'cross', 'COLOR_WHITE')
-    end
-end)
-
-exports['lxr-core']:AddCommand("clearblood", Lang:t("commands.clearblood"), {}, false, function(source)
-    local src = source
-    local Player = exports['lxr-core']:GetPlayer(src)
-    if Player.PlayerData.job.name == "police" and Player.PlayerData.job.onduty then
-        TriggerClientEvent("evidence:client:ClearBlooddropsInArea", src)
-    else
-        TriggerClientEvent('LXRCore:Notify', src, 9, Lang:t("error.on_duty_police_only"), 5000, 0, 'mp_lobby_textures', 'cross', 'COLOR_WHITE')
-    end
-end)
-
-exports['lxr-core']:AddCommand("seizecash", Lang:t("commands.seizecash"), {}, false, function(source)
-    local src = source
-    local Player = exports['lxr-core']:GetPlayer(src)
-    if Player.PlayerData.job.name == "police" and Player.PlayerData.job.onduty then
-        TriggerClientEvent("police:client:SeizeCash", src)
-    else
-        TriggerClientEvent('LXRCore:Notify', src, 9, Lang:t("error.on_duty_police_only"), 5000, 0, 'mp_lobby_textures', 'cross', 'COLOR_WHITE')
-    end
-end)
-
-exports['lxr-core']:AddCommand("sc", Lang:t("commands.softcuff"), {}, false, function(source)
-    local src = source
-    local Player = exports['lxr-core']:GetPlayer(src)
-    if Player.PlayerData.job.name == "police" and Player.PlayerData.job.onduty then
-        TriggerClientEvent("police:client:CuffPlayerSoft", src)
-    else
-        TriggerClientEvent('LXRCore:Notify', src, 9, Lang:t("error.on_duty_police_only"), 5000, 0, 'mp_lobby_textures', 'cross', 'COLOR_WHITE')
-    end
-end)
-
--- exports['lxr-core']:AddCommand("takedna", Lang:t("commands.takedna"), {{name = "id", help = Lang:t('info.player_id')}}, true, function(source, args)
---     local src = source
---     local Player = exports['lxr-core']:GetPlayer(src)
---     local OtherPlayer = exports['lxr-core']:GetPlayer(tonumber(args[1]))
---     if ((Player.PlayerData.job.name == "police") and Player.PlayerData.job.onduty) and OtherPlayer then
---         if Player.Functions.RemoveItem("satchel", 1) then
---             local info = {
---                 label = Lang:t('info.dna_sample'),
---                 ["_type"] = "dna",
---                 dnalabel = DnaHash(OtherPlayer.PlayerData.citizenid)
---             }
---             if Player.Functions.AddItem("evidence_satchel", 1, false, info) then
---                 TriggerClientEvent("inventory:client:ItemBox", src, sharedItems["evidence_satchel"], "add")
---             end
---         else
---             TriggerClientEvent('LXRCore:Notify', src, 9, Lang:t("error.have_evidence_bag"), 5000, 0, 'mp_lobby_textures', 'cross', 'COLOR_WHITE')
---         end
---     end
--- end)
-
--- Items
-exports['lxr-core']:CreateUseableItem("handcuffs", function(source, item)
-    local src = source
-    local Player = exports['lxr-core']:GetPlayer(src)
-    if Player.Functions.GetItemByName(item.name) then
-        TriggerClientEvent("police:client:CuffPlayerSoft", src)
-    end
-end)
-
-exports['lxr-core']:CreateUseableItem("moneybag", function(source, item)
-    local src = source
-    local Player = exports['lxr-core']:GetPlayer(src)
-    if Player.Functions.GetItemByName(item.name) then
-        if item.info and item.info ~= "" then
-            if Player.PlayerData.job.name ~= "police" then
-                if Player.Functions.RemoveItem("moneybag", 1, item.slot) then
-                    Player.Functions.AddMoney("cash", tonumber(item.info.cash), "used-moneybag")
-                end
-            end
-        end
-    end
-end)
-
-exports['lxr-core']:CreateUseableItem("evidence_satchel", function(source, item)
-    local src = source
-    local Player = exports['lxr-core']:GetPlayer(src)
-    
-    if Player.Functions.GetItemByName(item.name) then
-        print("HERDABASDB",json.encode(item.info))
-        if item.info and item.info ~= "" then           
-            local revealtext = item.info.revealtext
-            if not revealtext then return end
-            print("Hitting",item.info.revealtext)
-            --3 4
-            TriggerClientEvent('LXRCore:Notify', src, 4  , revealtext, 2000, 0, 'hud_textures', 'check')
-        end
-    end
-end)
-
--- Callbacks
-exports['lxr-core']:CreateCallback('police:server:isPlayerDead', function(source, cb, playerId)
-    local Player = exports['lxr-core']:GetPlayer(playerId)
-    cb(Player.PlayerData.metadata["isdead"])
-end)
-
-exports['lxr-core']:CreateCallback('police:GetPlayerStatus', function(source, cb, playerId)
-    local Player = exports['lxr-core']:GetPlayer(playerId)
-    local statList = {}
-    if Player then
-        if PlayerStatus[Player.PlayerData.source] and next(PlayerStatus[Player.PlayerData.source]) then
-            for k, v in pairs(PlayerStatus[Player.PlayerData.source]) do
-                statList[#statList+1] = PlayerStatus[Player.PlayerData.source][k].text
-            end
-        end
-    end
-    cb(statList)
-end)
-
-exports['lxr-core']:CreateCallback('police:GetDutyPlayers', function(source, cb)
-    local dutyPlayers = {}
-    local players = exports['lxr-core']:GetLXRPlayers()
-    for k, v in pairs(players) do
-        if Config.Law[v.PlayerData.job.name] and v.PlayerData.job.onduty then
-            dutyPlayers[#dutyPlayers+1] = {
-                source = Player.PlayerData.source,
-                label = Player.PlayerData.metadata["callsign"],
-                job = Player.PlayerData.job.name
-            }
-        end
-    end
-    cb(dutyPlayers)
-end)
-
-exports['lxr-core']:CreateCallback('police:GetCops', function(source, cb)
-    local amount = 0
-    local players = exports['lxr-core']:GetLXRPlayers()
-    for k, v in pairs(players) do
-        if Config.Law[v.PlayerData.job.name] and v.PlayerData.job.onduty then
-            amount = amount + 1
-        end
-    end
-    cb(amount)
-end)
-
-exports['lxr-core']:CreateCallback('police:server:IsPoliceForcePresent', function(source, cb)
-    local retval = false
-    local players = exports['lxr-core']:GetLXRPlayers()
-    for k, v in pairs(players) do
-        if Config.Law[v.PlayerData.job.name] and v.PlayerData.job.grade.level >= 2 then
-            retval = true
-            break
-        end
-    end
-    cb(retval)
-end)
-
--- Events
-AddEventHandler('onResourceStart', function(resourceName)
-    if resourceName == GetCurrentResourceName() then
-        CreateThread(function()
-            MySQL.query.await("DELETE FROM stashitems WHERE stash='policetrash'")
-        end)
-    end
-end)
-
-RegisterNetEvent('police:server:policeAlert', function(text)
-    local src = source
+local function nearCoords(src, coords, dist)
     local ped = GetPlayerPed(src)
-    local coords = GetEntityCoords(ped)
-    local players = exports['lxr-core']:GetLXRPlayers()
-    for k,v in pairs(players) do
-        if Config.Law[v.PlayerData.job.name] and v.PlayerData.job.onduty then
-            local alertData = {title = Lang:t('info.new_call'), coords = {coords.x, coords.y, coords.z}, description = text}
-            TriggerClientEvent("lxr-phone:client:addPoliceAlert", v.PlayerData.source, alertData)
-            TriggerClientEvent('police:client:policeAlert', v.PlayerData.source, coords, text)
+    return ped ~= 0 and #(GetEntityCoords(ped) - vector3(coords.x, coords.y, coords.z)) <= (dist or Config.Security.maxDistance)
+end
+local function nameOf(P) local ci = P.PlayerData.charinfo return ci.firstname .. ' ' .. ci.lastname end
+local function log(msg, data) if Config.Debug.log then LXRCore.Log.info('lawman', msg, data) end end
+
+---Officer + target gate.
+local function pair(src, targetId, dist)
+    if limited(src) then return nil, nil, 'rate' end
+    local O = player(src)
+    if not O or not L.IsLaw(O.PlayerData.job) then return nil, nil, 'not_law' end
+    local T = player(tonumber(targetId) or -1)
+    if not T or T.PlayerData.source == src then return nil, nil, 'invalid' end
+    if not near(src, T.PlayerData.source, dist) then return nil, nil, 'too_far' end
+    return O, T
+end
+
+-- ═══════════════════════════════════════════════════════════════════════════════
+-- 💾 BOUNTIES
+-- ═══════════════════════════════════════════════════════════════════════════════
+LXRCore.DB.RegisterMigration(RES, '0001_bounties', [[
+CREATE TABLE IF NOT EXISTS `lxr_bounties` (
+  `id` INT NOT NULL AUTO_INCREMENT,
+  `citizenid` VARCHAR(50) NOT NULL,
+  `name` VARCHAR(100) NOT NULL,
+  `amount` DECIMAL(10,2) NOT NULL,
+  `reason` VARCHAR(255) DEFAULT NULL,
+  `posted_by` VARCHAR(100) DEFAULT NULL,
+  `station` VARCHAR(32) DEFAULT NULL,
+  `created_at` TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  PRIMARY KEY (`id`), KEY `cid` (`citizenid`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+]])
+
+local function board()
+    return LXRCore.DB.Query('SELECT id, citizenid, name, amount, reason, posted_by, station, created_at FROM lxr_bounties ORDER BY amount DESC, id DESC LIMIT 50') or {}
+end
+
+local function payBounty(T, hunterSrc)
+    local rows = LXRCore.DB.Query('SELECT id, amount FROM lxr_bounties WHERE citizenid = ?', { T.PlayerData.citizenid }) or {}
+    local total = 0
+    for _, r in ipairs(rows) do total = total + (tonumber(r.amount) or 0) end
+    if total <= 0 then return 0 end
+    LXRCore.DB.Update('DELETE FROM lxr_bounties WHERE citizenid = ?', { T.PlayerData.citizenid })
+    local H = player(hunterSrc)
+    if H then H.Functions.AddMoney('cash', total, 'bounty:' .. T.PlayerData.citizenid) notify(hunterSrc, 'info.bounty_paid', 'success', { amount = ('%.2f'):format(total) }) end
+    LXRCore.Emit('lxr:lawman:bounty:paid', nil, T.PlayerData.citizenid, total, hunterSrc)
+    return total
+end
+
+-- ═══════════════════════════════════════════════════════════════════════════════
+-- 🏛️ STATION: duty, armoury, evidence, desk
+-- ═══════════════════════════════════════════════════════════════════════════════
+local function desk(src)
+    local P = player(src)
+    local job = P.PlayerData.job
+    local station = L.StationFor(job.name)
+    local onDuty = {}
+    for _, s in ipairs(Config.Stations) do
+        for _, j in ipairs(s.jobs) do
+            for _, o in ipairs(LXR.Players.OnDuty(j)) do onDuty[#onDuty + 1] = { name = nameOf(o._r), job = j, grade = o._r.PlayerData.job.grade.name } end
         end
     end
+    return { station = station and { id = station.id, label = station.label }, job = { name = job.name, label = LXRShared.Jobs[job.name] and LXRShared.Jobs[job.name].label or job.name, grade = job.grade.name, onduty = job.onduty },
+             onDuty = onDuty, bounties = Config.Bounties.enabled and board() or {}, canPost = L.IsLaw(job), limits = { bountyMin = Config.Bounties.min, bountyMax = Config.Bounties.max, fineMin = Config.Fines.min, fineMax = Config.Fines.max, jailMax = Config.Jail.maxMinutes } }
+end
+
+LXR.RPC.Register('lxr-lawman:desk', function(src, stationId)
+    if limited(src) then return false, 'rate' end
+    local P, st = player(src), L.Station(stationId)
+    if not P or not st then return false, 'invalid' end
+    local job = P.PlayerData.job
+    if not (L.IsLaw(job, true) or L.IsHunter(job)) then return false, 'not_law' end
+    if not nearCoords(src, st.desk) then return false, 'too_far' end
+    return true, desk(src), Lang.bundle(), LXRCore.Brand
 end)
 
-RegisterNetEvent('police:server:CuffPlayer', function(playerId, isSoftcuff)
+LXR.RPC.Register('lxr-lawman:duty', function(src, stationId)
+    if limited(src) then return false, 'rate' end
+    local P, st = player(src), L.Station(stationId)
+    if not P or not st or not L.IsLaw(P.PlayerData.job, true) then return false, 'not_law' end
+    if not nearCoords(src, st.desk) then return false, 'too_far' end
+    P.Functions.SetJobDuty(not P.PlayerData.job.onduty)
+    notify(src, P.PlayerData.job.onduty and 'info.on_duty' or 'info.off_duty', 'inform')
+    return true, desk(src)
+end)
+
+LXR.RPC.Register('lxr-lawman:armoury', function(src, stationId)
+    if limited(src) then return false, 'rate' end
+    local P, st = player(src), L.Station(stationId)
+    if not P or not st or not L.IsLaw(P.PlayerData.job) then return false, 'not_law' end
+    if not LXRShared.JobHasPerm(P.PlayerData.job, 'armory') then return false, 'no_armoury' end
+    if not nearCoords(src, st.armoury) then return false, 'too_far' end
+    exports['lxr-inventory']:OpenInventory(src, 'stash', L.ArmouryStash(P.PlayerData.job.name), { label = Lang:t('ui.armoury') })
+    return true
+end)
+
+LXR.RPC.Register('lxr-lawman:evidence', function(src, stationId)
+    if limited(src) then return false, 'rate' end
+    local P, st = player(src), L.Station(stationId)
+    if not P or not st or not L.IsLaw(P.PlayerData.job) then return false, 'not_law' end
+    if not nearCoords(src, st.evidence) then return false, 'too_far' end
+    exports['lxr-inventory']:OpenInventory(src, 'stash', L.EvidenceStash(st.id), { label = Lang:t('ui.evidence') })
+    return true
+end)
+
+LXR.RPC.Register('lxr-lawman:bounty:post', function(src, stationId, citizenid, amount, reason)
+    if limited(src) then return false, 'rate' end
+    local P, st = player(src), L.Station(stationId)
+    if not P or not st or not L.IsLaw(P.PlayerData.job) or not Config.Bounties.enabled then return false, 'not_law' end
+    amount = L.Bounty(amount)
+    if not amount then return false, 'bad_amount' end
+    local T = LXRCore.Functions.GetPlayerByCitizenId(citizenid) or LXRCore.Functions.GetOfflinePlayerByCitizenId(citizenid)
+    if not T then return false, 'no_such_name' end
+    reason = tostring(reason or ''):gsub('[%c<>]', ''):sub(1, 120)
+    LXRCore.DB.Insert('INSERT INTO lxr_bounties (citizenid, name, amount, reason, posted_by, station) VALUES (?, ?, ?, ?, ?, ?)', { citizenid, nameOf(T), amount, reason, nameOf(P), st.id })
+    LXRCore.Emit('lxr:lawman:bounty:posted', nil, citizenid, amount, src)
+    log('bounty posted', { source = src, target = citizenid, amount = amount })
+    return true, desk(src)
+end)
+
+LXR.RPC.Register('lxr-lawman:bounty:pull', function(src, stationId, id)
+    if limited(src) then return false, 'rate' end
+    local P, st = player(src), L.Station(stationId)
+    if not P or not st or not L.IsLaw(P.PlayerData.job) then return false, 'not_law' end
+    LXRCore.DB.Update('DELETE FROM lxr_bounties WHERE id = ?', { tonumber(id) or -1 })
+    return true, desk(src)
+end)
+
+-- ═══════════════════════════════════════════════════════════════════════════════
+-- 🔗 CUFFS & ESCORT
+-- ═══════════════════════════════════════════════════════════════════════════════
+local function setCuffed(T, on, by)
+    T.Functions.SetMetaData('ishandcuffed', on == true)
+    Player(T.PlayerData.source).state:set('cuffed', on == true, true)
+    TriggerClientEvent('lxr-lawman:client:cuffed', T.PlayerData.source, on == true)
+    if on and Config.Law.disarmOnCuff and GetResourceState('lxr-weapons') == 'started' then exports['lxr-weapons']:Disarm(T.PlayerData.source, 'cuffed') end
+    LXRCore.Emit('lxr:lawman:cuffed', nil, T.PlayerData.source, on == true, by)
+end
+
+RegisterNetEvent('lxr-lawman:server:cuff', function(targetId)
     local src = source
-    local Player = exports['lxr-core']:GetPlayer(src)
-    local CuffedPlayer = exports['lxr-core']:GetPlayer(playerId)
-    if CuffedPlayer then
-        if Player.Functions.GetItemByName("handcuffs") or Player.PlayerData.job.name == "police" then
-            TriggerClientEvent("police:client:GetCuffed", CuffedPlayer.PlayerData.source, Player.PlayerData.source, isSoftcuff)
+    local O, T, why = pair(src, targetId, Config.Cuffs.distance)
+    if not O then return notify(src, 'error.' .. why, 'error') end
+    local cuffed = T.PlayerData.metadata.ishandcuffed == true
+    if not cuffed and Config.Law.cuffItem and not Inventory.HasItem(src, Config.Law.cuffItem) then return notify(src, 'error.no_cuffs', 'error') end
+    setCuffed(T, not cuffed, src)
+    if cuffed and escorts[T.PlayerData.source] then escorts[T.PlayerData.source] = nil TriggerClientEvent('lxr-lawman:client:escort', T.PlayerData.source, nil) end
+    notify(src, cuffed and 'info.uncuffed' or 'info.cuffed', 'success', { name = nameOf(T) })
+    notify(T.PlayerData.source, cuffed and 'info.you_uncuffed' or 'info.you_cuffed', 'inform')
+    log(cuffed and 'uncuffed' or 'cuffed', { source = src, target = T.PlayerData.source })
+end)
+
+RegisterNetEvent('lxr-lawman:server:escort', function(targetId)
+    local src = source
+    local O, T, why = pair(src, targetId, Config.Cuffs.distance)
+    if not O then return notify(src, 'error.' .. why, 'error') end
+    if T.PlayerData.metadata.ishandcuffed ~= true then return notify(src, 'error.not_cuffed', 'error') end
+    local t = T.PlayerData.source
+    if escorts[t] == src then escorts[t] = nil TriggerClientEvent('lxr-lawman:client:escort', t, nil)
+    else escorts[t] = src TriggerClientEvent('lxr-lawman:client:escort', t, src) end
+end)
+
+RegisterNetEvent('lxr-lawman:server:search', function(targetId)
+    local src = source
+    local O, T, why = pair(src, targetId)
+    if not O then return notify(src, 'error.' .. why, 'error') end
+    exports['lxr-inventory']:OpenInventory(src, 'otherplayer', T.PlayerData.source)
+    LXRCore.Emit('lxr:lawman:searched', nil, T.PlayerData.source, src)
+end)
+
+RegisterNetEvent('lxr-lawman:server:seize', function(targetId)
+    local src = source
+    local O, T, why = pair(src, targetId)
+    if not O then return notify(src, 'error.' .. why, 'error') end
+    if not Config.Law.seizeIllegal then return end
+    local st = L.StationFor(O.PlayerData.job.name)
+    local n = 0
+    for _, it in ipairs(L.Seizable(T.PlayerData.items)) do
+        if T.Functions.RemoveItem(it.name, it.amount, it.slot, 'seized') then
+            n = n + it.amount
+            if st then exports['lxr-inventory']:AddStashItem(L.EvidenceStash(st.id), it.name, it.amount, it.info) end
         end
     end
+    if GetResourceState('lxr-weapons') == 'started' then exports['lxr-weapons']:Disarm(T.PlayerData.source, 'seized') end
+    notify(src, 'info.seized', 'success', { n = n })
+    LXRCore.Emit('lxr:lawman:seized', nil, T.PlayerData.source, src, n)
 end)
 
-RegisterNetEvent('police:server:EscortPlayer', function(playerId)
+-- ═══════════════════════════════════════════════════════════════════════════════
+-- 💸 FINES
+-- ═══════════════════════════════════════════════════════════════════════════════
+RegisterNetEvent('lxr-lawman:server:fine', function(targetId, amount, reason)
     local src = source
-    local Player = exports['lxr-core']:GetPlayer(source)
-    local EscortPlayer = exports['lxr-core']:GetPlayer(playerId)
-    if EscortPlayer then
-        if (Player.PlayerData.job.name == "police" or Player.PlayerData.job.name == "ambulance") or (EscortPlayer.PlayerData.metadata["ishandcuffed"] or EscortPlayer.PlayerData.metadata["isdead"] or EscortPlayer.PlayerData.metadata["inlaststand"]) then
-            TriggerClientEvent("police:client:GetEscorted", EscortPlayer.PlayerData.source, Player.PlayerData.source)
-        else
-            TriggerClientEvent('LXRCore:Notify', src, 9, Lang:t("error.not_cuffed_dead"), 5000, 0, 'mp_lobby_textures', 'cross', 'COLOR_WHITE')
-        end
+    local O, T, why = pair(src, targetId)
+    if not O then return notify(src, 'error.' .. why, 'error') end
+    amount = L.Fine(amount)
+    if not amount then return notify(src, 'error.bad_amount', 'error') end
+    reason = tostring(reason or ''):gsub('[%c<>]', ''):sub(1, 120)
+    local acc = Config.Fines.account
+    if not T.Functions.RemoveMoney(acc, amount, 'fine:' .. reason) then
+        acc = Config.Fines.fallbackAccount
+        if not acc or not T.Functions.RemoveMoney(acc, amount, 'fine:' .. reason) then return notify(src, 'error.cannot_pay', 'error') end
     end
+    if Config.Fines.toSociety and GetResourceState('lxr-bank') == 'started' then exports['lxr-bank']:MoveBook('society_' .. O.PlayerData.job.name, amount, O.PlayerData.citizenid, 'fine: ' .. nameOf(T)) end
+    notify(src, 'info.fined', 'success', { name = nameOf(T), amount = ('%.2f'):format(amount) })
+    notify(T.PlayerData.source, 'info.you_fined', 'inform', { amount = ('%.2f'):format(amount), reason = reason })
+    LXRCore.Emit('lxr:lawman:fined', nil, T.PlayerData.source, src, amount, reason)
+    log('fine', { source = src, target = T.PlayerData.source, amount = amount, reason = reason })
 end)
 
-RegisterNetEvent('police:server:KidnapPlayer', function(playerId)
+-- ═══════════════════════════════════════════════════════════════════════════════
+-- ⛓️ JAIL
+-- ═══════════════════════════════════════════════════════════════════════════════
+local function jail(T, minutes, by, reason)
+    T.Functions.SetMetaData('injail', minutes)
+    T.Functions.SetMetaData('jailreason', reason)
+    if T.PlayerData.metadata.ishandcuffed then setCuffed(T, false, by) end
+    local t = T.PlayerData.source
+    escorts[t] = nil
+    TriggerClientEvent('lxr-lawman:client:escort', t, nil)
+    if Config.Jail.stripWeapons and GetResourceState('lxr-weapons') == 'started' then exports['lxr-weapons']:Disarm(t, 'jailed') end
+    Player(t).state:set('jailed', minutes, true)
+    TriggerClientEvent('lxr-lawman:client:jail', t, minutes)
+    LXRCore.Emit('lxr:lawman:jailed', nil, t, minutes, by, reason)
+end
+
+local function release(T, reason)
+    T.Functions.SetMetaData('injail', 0)
+    local t = T.PlayerData.source
+    Player(t).state:set('jailed', 0, true)
+    TriggerClientEvent('lxr-lawman:client:jail', t, 0)
+    LXRCore.Emit('lxr:lawman:released', nil, t, reason)
+end
+
+RegisterNetEvent('lxr-lawman:server:jail', function(targetId, minutes, reason)
     local src = source
-    local Player = exports['lxr-core']:GetPlayer(source)
-    local EscortPlayer = exports['lxr-core']:GetPlayer(playerId)
-    if EscortPlayer then
-        if EscortPlayer.PlayerData.metadata["ishandcuffed"] or EscortPlayer.PlayerData.metadata["isdead"] or
-            EscortPlayer.PlayerData.metadata["inlaststand"] then
-            TriggerClientEvent("police:client:GetKidnappedTarget", EscortPlayer.PlayerData.source, Player.PlayerData.source)
-            TriggerClientEvent("police:client:GetKidnappedDragger", Player.PlayerData.source, EscortPlayer.PlayerData.source)
-        else
-            TriggerClientEvent('LXRCore:Notify', src, 9, Lang:t("error.not_cuffed_dead"), 5000, 0, 'mp_lobby_textures', 'cross', 'COLOR_WHITE')
-        end
-    end
+    local O, T, why = pair(src, targetId)
+    if not O then return notify(src, 'error.' .. why, 'error') end
+    minutes = L.Sentence(minutes)
+    if not minutes then return notify(src, 'error.bad_sentence', 'error') end
+    reason = tostring(reason or ''):gsub('[%c<>]', ''):sub(1, 120)
+    jail(T, minutes, src, reason)
+    local paid = Config.Bounties.enabled and Config.Bounties.payOn == 'jail' and payBounty(T, src) or 0
+    notify(src, 'info.jailed', 'success', { name = nameOf(T), minutes = minutes })
+    notify(T.PlayerData.source, 'info.you_jailed', 'inform', { minutes = minutes, reason = reason })
+    log('jailed', { source = src, target = T.PlayerData.source, minutes = minutes, bounty = paid })
 end)
 
-RegisterNetEvent('police:server:SetPlayerOutVehicle', function(playerId)
+RegisterNetEvent('lxr-lawman:server:release', function(targetId)
     local src = source
-    local Player = exports['lxr-core']:GetPlayer(source)
-    local EscortPlayer = exports['lxr-core']:GetPlayer(playerId)
-    if EscortPlayer then
-        if EscortPlayer.PlayerData.metadata["ishandcuffed"] or EscortPlayer.PlayerData.metadata["isdead"] then
-            TriggerClientEvent("police:client:SetOutVehicle", EscortPlayer.PlayerData.source)
-        else
-            TriggerClientEvent('LXRCore:Notify', src, 9, Lang:t("error.not_cuffed_dead"), 5000, 0, 'mp_lobby_textures', 'cross', 'COLOR_WHITE')
-        end
-    end
+    if limited(src) then return end
+    local O = player(src)
+    if not O or not L.IsLaw(O.PlayerData.job) then return end
+    local T = player(tonumber(targetId) or -1)
+    if not T or (tonumber(T.PlayerData.metadata.injail) or 0) <= 0 then return end
+    release(T, 'released')
+    notify(src, 'info.released', 'success', { name = nameOf(T) })
 end)
 
-RegisterNetEvent('police:server:PutPlayerInVehicle', function(playerId)
-    local src = source
-    local EscortPlayer = exports['lxr-core']:GetPlayer(playerId)
-    if EscortPlayer then
-        if EscortPlayer.PlayerData.metadata["ishandcuffed"] or EscortPlayer.PlayerData.metadata["isdead"] then
-            TriggerClientEvent("police:client:PutInVehicle", EscortPlayer.PlayerData.source)
-        else
-            TriggerClientEvent('LXRCore:Notify', src, 9, Lang:t("error.not_cuffed_dead"), 5000, 0, 'mp_lobby_textures', 'cross', 'COLOR_WHITE')
-        end
-    end
+-- bounty hunters bring a name in alive at a station desk
+LXR.RPC.Register('lxr-lawman:turnin', function(src, stationId, targetId)
+    if limited(src) then return false, 'rate' end
+    local H, st = player(src), L.Station(stationId)
+    if not H or not st or not (L.IsHunter(H.PlayerData.job) or L.IsLaw(H.PlayerData.job)) then return false, 'not_law' end
+    if not nearCoords(src, st.desk, 6.0) then return false, 'too_far' end
+    local T = player(tonumber(targetId) or -1)
+    if not T or not near(src, T.PlayerData.source, 6.0) then return false, 'invalid' end
+    if T.PlayerData.metadata.ishandcuffed ~= true then return false, 'not_cuffed' end
+    local rows = LXRCore.DB.Query('SELECT SUM(amount) AS total FROM lxr_bounties WHERE citizenid = ?', { T.PlayerData.citizenid })
+    local total = rows and rows[1] and tonumber(rows[1].total) or 0
+    if total <= 0 then return false, 'no_bounty' end
+    jail(T, math.min(Config.Jail.maxMinutes, math.max(Config.Jail.minMinutes, math.floor(total / 10))), src, 'bounty')
+    payBounty(T, src)
+    return true, desk(src)
 end)
 
-RegisterNetEvent('police:server:BillPlayer', function(playerId, price)
-    local src = source
-    local Player = exports['lxr-core']:GetPlayer(src)
-    local OtherPlayer = exports['lxr-core']:GetPlayer(playerId)
-    if Player.PlayerData.job.name == "police" then
-        if OtherPlayer then
-            OtherPlayer.Functions.RemoveMoney("bank", price, "paid-bills")
-            TriggerEvent('lxr-bossmenu:server:addAccountMoney', "police", price)
-            TriggerClientEvent('LXRCore:Notify', OtherPlayer.PlayerData.source, 9, Lang:t("info.fine_received", {fine = price}), 5000, 0, 'blips', 'blip_radius_search', 'COLOR_WHITE')
-        end
-    end
-end)
-
-RegisterNetEvent('police:server:JailPlayer', function(playerId, time)
-    local src = source
-    local Player = exports['lxr-core']:GetPlayer(src)
-    local OtherPlayer = exports['lxr-core']:GetPlayer(playerId)
-    local currentDate = os.date("*t")
-    if currentDate.day == 31 then
-        currentDate.day = 30
-    end
-
-    if Player.PlayerData.job.name == "police" then
-        if OtherPlayer then
-            OtherPlayer.Functions.SetMetaData("injail", time)
-            OtherPlayer.Functions.SetMetaData("criminalrecord", {
-                ["hasRecord"] = true,
-                ["date"] = currentDate
-            })
-            TriggerClientEvent("police:client:SendToJail", OtherPlayer.PlayerData.source, time)
-            TriggerClientEvent('LXRCore:Notify', src, 9, Lang:t("info.sent_jail_for", {time = time}), 5000, 0, 'blips', 'blip_radius_search', 'COLOR_WHITE')
-        end
-    end
-end)
-
-RegisterNetEvent('police:server:SetHandcuffStatus', function(isHandcuffed)
-    local src = source
-    local Player = exports['lxr-core']:GetPlayer(src)
-    if Player then
-        Player.Functions.SetMetaData("ishandcuffed", isHandcuffed)
-    end
-end)
-
-RegisterNetEvent('police:server:SearchPlayer', function(playerId)
-    local src = source
-    local SearchedPlayer = exports['lxr-core']:GetPlayer(playerId)
-    if SearchedPlayer then
-        TriggerClientEvent('LXRCore:Notify', src, 9, Lang:t("info.cash_found", {cash = SearchedPlayer.PlayerData.money["cash"]}), 5000, 0, 'blips', 'blip_radius_search', 'COLOR_WHITE')
-        TriggerClientEvent('LXRCore:Notify', SearchedPlayer.PlayerData.source, 9, Lang:t("info.being_searched"), 5000, 0, 'blips', 'blip_radius_search', 'COLOR_WHITE')
-    end
-end)
-
-RegisterNetEvent('police:server:SeizeCash', function(playerId)
-    local src = source
-    local Player = exports['lxr-core']:GetPlayer(src)
-    local SearchedPlayer = exports['lxr-core']:GetPlayer(playerId)
-    if SearchedPlayer then
-        local moneyAmount = SearchedPlayer.PlayerData.money["cash"]
-        local info = { cash = moneyAmount }
-        SearchedPlayer.Functions.RemoveMoney("cash", moneyAmount, "police-cash-seized")
-        Player.Functions.AddItem("moneybag", 1, false, info)
-        TriggerClientEvent('inventory:client:ItemBox', src, sharedItems["moneybag"], "add")
-        TriggerClientEvent('LXRCore:Notify', SearchedPlayer.PlayerData.source, 9, Lang:t("info.cash_confiscated"), 5000, 0, 'blips', 'blip_radius_search', 'COLOR_WHITE')
-    end
-end)
-
-RegisterNetEvent('police:server:RobPlayer', function(playerId)
-    local src = source
-    local Player = exports['lxr-core']:GetPlayer(src)
-    local SearchedPlayer = exports['lxr-core']:GetPlayer(playerId)
-    if SearchedPlayer then
-        local money = SearchedPlayer.PlayerData.money["cash"]
-        Player.Functions.AddMoney("cash", money, "police-player-robbed")
-        SearchedPlayer.Functions.RemoveMoney("cash", money, "police-player-robbed")
-        TriggerClientEvent('LXRCore:Notify', SearchedPlayer.PlayerData.source, 9, Lang:t("info.cash_robbed", {money = money}), 5000, 0, 'blips', 'blip_radius_search', 'COLOR_WHITE')
-        TriggerClientEvent('LXRCore:Notify', Player.PlayerData.source, 9, Lang:t("info.stolen_money", {stolen = money}), 5000, 0, 'blips', 'blip_radius_search', 'COLOR_WHITE')
-    end
-end)
-
-RegisterNetEvent('police:server:UpdateBlips', function()
-    -- KEEP FOR REF BUT NOT NEEDED ANYMORE.
-end)
-
-RegisterNetEvent('police:server:spawnObject', function(_type)
-    local src = source
-    local objectId = CreateUniqueId(Objects)
-    Objects[objectId] = _type
-    TriggerClientEvent("police:client:spawnObject", src, objectId, _type, src)
-end)
-
-RegisterNetEvent('police:server:deleteObject', function(objectId)
-    TriggerClientEvent('police:client:removeObject', -1, objectId)
-end)
-
-RegisterNetEvent('evidence:server:UpdateStatus', function(data)
-    local src = source
-    PlayerStatus[src] = data
-end)
-
-RegisterNetEvent('evidence:server:AddEvidence', function(categoryId, coords, drawtext, revealtext)
-    assert(categoryId, "[Server] [lxr-PoliceJob-evidence:server:AddEvidence] Missing categoryId")
-    if not Evidences[categoryId] then Evidences[categoryId] = {} end
-
-    local id = CreateUniqueId(Evidences[categoryId])    
-    local data, serverdata =  {}, {}
-    data.categoryId, serverdata.categoryId = categoryId, categoryId
-    data.id, serverdata.id = id, id
-    data.coords, serverdata.coords = coords, coords
-    data.drawtext, serverdata.drawtext = drawtext, drawtext
-    serverdata.revealtext = revealtext
-    Evidences[categoryId][id] = serverdata
-    TriggerClientEvent("evidence:client:AddEvidence", -1, data)
-end)
-
-
-RegisterNetEvent('evidence:server:CreateCasing', function(weaponHash, coords)
-    local src = source
-    local Player = exports['lxr-core']:GetPlayer(src)
-    local sharedWeapons = exports['lxr-core']:GetWeapons()
-    local weaponInfo = sharedWeapons[weaponHash]
-    local serieNumber = nil
-    if weaponInfo then
-        local weaponItem = Player.Functions.GetItemByName(weaponInfo["name"])
-        if weaponItem and weaponItem.info and weaponItem.info ~= "" then
-            serieNumber = weaponItem.info.serie
-        end
-    end
-    if not serieNumber then serieNumber = Lang:t("evidence.serial_not_visible") end
-    local weapConfig = Config.WeaponHashes[weaponHash]
-    local value = "Unknown"
-    if weapConfig then value = weapConfig.weaponAmmoLabel end
-
-    local drawtext = Lang:t("info.bullet_casing", {value = value})
-    local revealtext = Lang:t("info.casing") .. ' | ' .. serieNumber .. ' - ' .. value
-
-    TriggerEvent('evidence:server:AddEvidence', 'Casings', coords, drawtext, revealtext)
-end)
-
-RegisterNetEvent('evidence:server:CreateBloodDrop', function(citizenid, bloodtype, coords) --this all could be moved into the ambulance job
-    
-    local label = Lang:t("info.blood")
-    local dnalabel = DnaHash(citizenid)
-    local bloodtype = bloodtype
-    local drawtext = Lang:t("info.blood_text", {value = dnalabel})
-    local revealtext = label .. ' | ' .. dnalabel .. ' (' .. bloodtype .. ')'
-    local crds = vector3(coords.x, coords.y, coords.z - 0.9)
-    TriggerEvent('evidence:server:AddEvidence', 'BloodDrops', crds, drawtext, revealtext)
-end)
-
-RegisterNetEvent('evidence:server:CreateFingerDrop', function(coords)
-    local src = source
-    local Player = exports['lxr-core']:GetPlayer(src)    
-    
-    local lable = Lang:t("info.fingerprint")
-    local fingerprint = Player.PlayerData.metadata["fingerprint"]    
-    local revealtext = lable .. ' | ' .. fingerprint
-    local drawtext = Lang:t("fingerprint_text")
-
-    TriggerEvent('evidence:server:AddEvidence', 'FingerDrops', coords, drawtext, revealtext)
-end)
-
-RegisterNetEvent('evidence:server:ClearCasings', function(casingList)
-    if casingList and next(casingList) then
-        for k, v in pairs(casingList) do
-            TriggerClientEvent("evidence:client:RemoveCasing", -1, v)
-            Evidences.Casings[v] = nil
-        end
-    end
-end)
-
-RegisterNetEvent('evidence:server:ClearBlooddrops', function(blooddropList)
-    if blooddropList and next(blooddropList) then
-        for k, v in pairs(blooddropList) do
-            TriggerClientEvent("evidence:client:RemoveBlooddrop", -1, v)
-            Evidences.BloodDrops[v] = nil
-        end
-    end
-end)
-
-RegisterNetEvent('evidence:server:AddEvidenceToInventory', function(category, id, info)
-    local src = source
-    local Player = exports['lxr-core']:GetPlayer(src)
-    local evidences = Evidences[category]
-    if not evidences then return end
-    local evidence = evidences[id]
-    if not evidence then return end
-
-    if Player.Functions.RemoveItem("satchel", 1) then
-        if Player.Functions.AddItem("evidence_satchel", 1, false, evidence) then
-            TriggerClientEvent("inventory:client:ItemBox", src, sharedItems["evidence_satchel"], "add")            
-            TriggerClientEvent("evidence:client:RemoveEvidence", -1, category, id)
-        end
-    else
-        TriggerClientEvent('LXRCore:Notify', src, 9, Lang:t("error.have_evidence_bag"), 5000, 0, 'mp_lobby_textures', 'cross', 'COLOR_WHITE')
-    end
-end)
-
-RegisterNetEvent('police:server:UpdateCurrentCops', function()
-    local amount = 0
-    local players = exports['lxr-core']:GetLXRPlayers()
-    for k, v in pairs(players) do
-        if Config.Law[v.PlayerData.job.name] and v.PlayerData.job.onduty then
-            amount = amount + 1
-        end
-    end
-    TriggerClientEvent("police:SetCopCount", -1, amount)
-end)
-
-
-RegisterNetEvent('police:server:showFingerprint', function(playerId)
-    local src = source
-    TriggerClientEvent('police:client:showFingerprint', playerId, src)
-    TriggerClientEvent('police:client:showFingerprint', src, playerId)
-end)
-
-RegisterNetEvent('police:server:showFingerprintId', function(sessionId)
-    local src = source
-    local Player = exports['lxr-core']:GetPlayer(src)
-    local fid = Player.PlayerData.metadata["fingerprint"]
-    TriggerClientEvent('police:client:showFingerprintId', sessionId, fid)
-    TriggerClientEvent('police:client:showFingerprintId', src, fid)
-end)
-
--- Hooks
-
-RegisterNetEvent('hospital:server:SyncInjuries', function(data)
-    local src = source
-    BodyParts = data.limbs
-    if not BodyParts then return end
-    local playerData = exports['lxr-core']:GetPlayer(src).PlayerData
-    if not playerData then return end
-    local coords = GetEntityCoords(GetPlayerPed(src))
-    TriggerEvent("evidence:server:CreateBloodDrop", playerData.citizenid, playerData.metadata["bloodtype"], coords)
-end)
-
--- Threads
+-- the sentence counts down while the inmate is online
 CreateThread(function()
     while true do
-        Wait(1000 * 60 * 10)
-        local curCops = GetCurrentCops()
-        TriggerClientEvent("police:SetCopCount", -1, curCops)
+        Wait(60000)
+        for src, P in pairs(LXRCore.Players) do
+            local left = tonumber(P.PlayerData.metadata.injail) or 0
+            if left > 0 then
+                left = left - 1
+                LXRCore.Emit('lxr:lawman:jail:tick', nil, src, left)
+                if left <= 0 then release(P, 'served') notify(src, 'info.served', 'success') else P.Functions.SetMetaData('injail', left) Player(src).state:set('jailed', left, true) end
+            end
+        end
     end
+end)
+
+-- relog: put people back where they belong
+RegisterNetEvent('lxr-lawman:server:ready', function()
+    local src = source
+    local P = player(src)
+    if not P then return end
+    local left = tonumber(P.PlayerData.metadata.injail) or 0
+    Player(src).state:set('jailed', left, true)
+    Player(src).state:set('cuffed', P.PlayerData.metadata.ishandcuffed == true, true)
+    if left > 0 then TriggerClientEvent('lxr-lawman:client:jail', src, left) end
+    if P.PlayerData.metadata.ishandcuffed then TriggerClientEvent('lxr-lawman:client:cuffed', src, true) end
+end)
+
+-- backup
+RegisterNetEvent('lxr-lawman:server:backup', function()
+    local src = source
+    if limited(src) then return end
+    local O = player(src)
+    if not O or not L.IsLaw(O.PlayerData.job) or GetResourceState('lxr-dispatch') ~= 'started' then return end
+    exports['lxr-dispatch']:Raise({ kind = 'backup', coords = GetEntityCoords(GetPlayerPed(src)), title = Lang:t('call.backup', { name = nameOf(O) }), src = src })
+end)
+
+AddEventHandler('playerDropped', function()
+    buckets[source] = nil
+    for t, o in pairs(escorts) do if o == source or t == source then escorts[t] = nil if t ~= source then TriggerClientEvent('lxr-lawman:client:escort', t, nil) end end end
 end)
 
 CreateThread(function()
-    while true do
-        Wait(5000)
-        UpdateBlips()
-    end
+    if Config.Debug.printBanner then print(('^1[lxr-lawman]^7 v%s — %d stations, jail at %s'):format(GetResourceMetadata(RES, 'version', 0), #Config.Stations, Config.Jail.place.label)) end
+end)
+
+-- ═══════════════════════════════════════════════════════════════════════════════
+-- 📤 EXPORTS
+-- ═══════════════════════════════════════════════════════════════════════════════
+exports('IsLaw', function(src) local P = player(src) return P ~= nil and L.IsLaw(P.PlayerData.job) end)
+exports('Cuff', function(src, on) local T = player(src) if T then setCuffed(T, on ~= false, nil) return true end return false end)
+exports('Jail', function(src, minutes, reason) local T = player(src) local m = L.Sentence(minutes) if T and m then jail(T, m, nil, reason or 'export') return true end return false end)
+exports('Release', function(src) local T = player(src) if T then release(T, 'export') return true end return false end)
+exports('Board', board)
+exports('PostBounty', function(citizenid, amount, reason, by)
+    local a = L.Bounty(amount) if not a then return false end
+    local T = LXRCore.Functions.GetPlayerByCitizenId(citizenid) or LXRCore.Functions.GetOfflinePlayerByCitizenId(citizenid)
+    if not T then return false end
+    LXRCore.DB.Insert('INSERT INTO lxr_bounties (citizenid, name, amount, reason, posted_by) VALUES (?, ?, ?, ?, ?)', { citizenid, nameOf(T), a, reason, by or 'county' })
+    return true
 end)

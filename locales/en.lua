@@ -1,217 +1,26 @@
---[[
-    ██╗     ██╗  ██╗██████╗        ██████╗ ██████╗ ██████╗ ███████╗
-    ██║     ╚██╗██╔╝██╔══██╗      ██╔════╝██╔═══██╗██╔══██╗██╔════╝
-    ██║      ╚███╔╝ ██████╔╝█████╗██║     ██║   ██║██████╔╝█████╗  
-    ██║      ██╔██╗ ██╔══██╗╚════╝██║     ██║   ██║██╔══██╗██╔══╝  
-    ███████╗██╔╝ ██╗██║  ██║      ╚██████╗╚██████╔╝██║  ██║███████╗
-    ╚══════╝╚═╝  ╚═╝╚═╝  ╚═╝       ╚═════╝ ╚═════╝ ╚═╝  ╚═╝╚══════╝
+--[[ ═══════════════════════════════════════════════════════════════════════════
+     LXR-LAWMAN — Locale: English (canonical)
+     Developer   : iBoss21 | Brand : LXRCore | https://www.lxrcore.com
+     © 2026 iBoss21 / LXRCore — All Rights Reserved
+     ═══════════════════════════════════════════════════════════════════════════ ]]
 
-    🐺 LXR Police Job - Locale: English
-
-    ═══════════════════════════════════════════════════════════════════════════════
-    SERVER INFORMATION
-    ═══════════════════════════════════════════════════════════════════════════════
-
-    Server:    The Land of Wolves 🐺
-    Developer: iBoss21 / The Lux Empire
-    Website:   https://www.wolves.land
-    Discord:   https://discord.gg/CrKcWdfd3A
-    Store:     https://theluxempire.tebex.io
-
-    © 2026 iBoss21 / The Lux Empire | wolves.land | All Rights Reserved
-    ═══════════════════════════════════════════════════════════════════════════════
-]]
-local Translations = {
+Locale.Register('en', {
     error = {
-        license_already = 'Player already has a license',
-        error_license = 'Player doesn\'t have that license',
-        no_camera = 'Camera doesn\'t exist',
-        blood_not_cleared = 'Blood NOT cleared',
-        bullet_casing_not_removed = 'Bullet Casings NOT Removed',
-        none_nearby = 'No one nearby!',
-        canceled = 'Canceled..',
-        time_higher = 'Time must be higher than 0',
-        amount_higher = 'Amount must be higher than 0',
-        vehicle_cuff = 'You can\'t cuff someone in a vehicle',
-        no_cuff = 'You don\'t have handcuffs on you',
-        no_impound = 'There are no impounded vehicles',
-        no_spikestripe = 'Cannot place anymore spike strips',
-        error_license_type = 'Invalid license type',
-        rank_license = 'You are not a high enough rank to grant a license',
-        revoked_license = 'You\'ve had a license revoked',
-        rank_revoke = 'You are not a high enough rank to revoke a license',
-        on_duty_police_only = 'For on-duty police only',
-        vehicle_not_flag = 'Vehicle not flagged',
-        not_towdriver = 'Not a tow truck driver',
-        not_lawyer = 'Person is not a lawyer',
-        no_anklet = 'This person doesn\'t have an anklet on.',
-        have_evidence_bag = 'You must have an empty evidence bag with you',
-        no_driver_license = 'No drivers license',
-        not_cuffed_dead = 'Civilian isn\'t cuffed or dead',
-    },
-    success = {
-        uncuffed = 'You have been uncuffed',
-        granted_license = 'You have been granted a license',
-        grant_license = 'You granted a license',
-        revoke_license = 'You revoked a license',
-        tow_paid = 'You were paid $500',
-        blood_clear = 'Blood Cleared',
-        bullet_casing_removed = 'Bullet Casings Removed...',
-        anklet_taken_off = 'Your ankle tracker is taken off.',
-        took_anklet_from = 'You took off %{firstname} %{lastname} tracker',
-        put_anklet = 'You put on an ankle tracker.',
-        put_anklet_on = 'You put on an ankle tracker on %{firstname} %{lastname}',
-        vehicle_flagged = 'Vehicle %{plate} has been flagged for %{reason}',
-        impound_vehicle_removed = 'Vehicle taken out of impound!',
+        rate = 'Slow down.', invalid = 'That request is not valid.', too_far = 'Get closer.', not_law = 'You are not the law here.', no_cuffs = 'You have no handcuffs.',
+        not_cuffed = 'They are not cuffed.', bad_amount = 'That amount is not lawful.', cannot_pay = 'They cannot pay.', bad_sentence = 'That sentence is not lawful.',
+        no_armoury = 'Your grade has no armoury key.', no_such_name = 'No such name on the county rolls.', no_bounty = 'No bounty on that name.', nobody_cuffed = 'Nobody in cuffs nearby.',
     },
     info = {
-        mr = 'Mr.',
-        mrs = 'Mrs.',
-        impound_price = 'Price the player pays to get vehicle out of impound (can be 0)',
-        plate_number = 'License Plate Number',
-        flag_reason = 'Reason for flagging vehicle',
-        camera_id = 'Camera ID',
-        callsign_name = 'Name of your callsign',
-        poobject_object = 'Object type to spawn or \'delete\' to delete',
-        player_id = 'ID of Player',
-        citizen_id = 'Citizen ID of Player',
-        dna_sample = 'DNA Sample',
-        jail_time = 'Time they have to be in jail',
-        jail_time_no = 'Jail time needs to be higher than 0',
-        license_type = 'License Type (driver/weapon)',
-        ankle_location = 'Ankle Tracker Location',
-        cuff = 'You are cuffed!',
-        cuffed_walk = 'You are cuffed, but you can walk',
-        vehicle_flagged = 'Vehicle %{vehicle} is flagged for: %{reason}',
-        unflag_vehicle = 'Vehicle %{vehicle} is unflagged',
-        tow_driver_paid = 'You paid the tow truck driver',
-        paid_lawyer = 'You paid a lawyer',
-        vehicle_taken_depot = 'Vehicle taken into depot for $%{price}',
-        vehicle_seized = 'Vehicle seized',
-        stolen_money = 'You have stolen $%{stolen}',
-        cash_robbed = 'You have been robbed of $%{money}',
-        driving_license_confiscated = 'Your driving license has been confiscated',
-        cash_confiscated = 'Your cash was confiscated',
-        being_searched = 'You are being searched',
-        cash_found = 'Found $%{cash} on the civilian',
-        sent_jail_for = 'You sent the person to prison for %{time} months',
-        fine_received = 'You received a fine of $%{fine}',
-        blip_text = 'Police Alert - %{text}',
-        jail_time_input = 'Jail time',
-        submit = 'Submit',
-        time_months = 'Time in Months',
-        bill = 'Bill',
-        amount = 'Amount',
-        police_plate = 'LSPD', --Should only be 4 characters long
-        vehicle_info = 'Engine: %{value} % | Fuel: %{value2} %',
-        evidence_stash = 'Evidence Stash | %{value}',
-        slot = 'Slot no. (1,2,3)',
-        current_evidence = '%{value} | Drawer %{value2}',
-        on_duty = '[~COLOR_YELLOWSTRONG~E~q~] - Go on duty',
-        off_duty = '[~COLOR_YELLOWSTRONG~E~q~] - Go off duty',
-        onoff_duty = '~COLOR_YELLOWSTRONG~On~q~/~COLOR_YELLOWSTRONG~Off~q~ Duty',
-        stash = 'Stash %{value}',
-        delete_spike = '[~COLOR_YELLOWSTRONG~E~q~] Delete Spike Strip',
-        close_camera = 'Close Camera',
-        bullet_casing = '[~COLOR_YELLOWSTRONG~G~q~] Bullet Casing %{value}',
-        casing = 'Bullet Casing',
-        blood = 'Blood',
-        blood_text = '[~COLOR_YELLOWSTRONG~G~q~] ~COLOR_RED~Blood %{value}',
-        fingerprint_text = '[~COLOR_YELLOWSTRONG~G~q~] Fingerprint',
-        fingerprint = 'Fingerprint',
-        store_heli = '[~COLOR_YELLOWSTRONG~E~q~] Store Helicopter',
-        take_heli = '[~COLOR_YELLOWSTRONG~E~q~] Take Helicopter',
-        impound_veh = '[~COLOR_YELLOWSTRONG~E~q~] - Impound Vehicle',
-        store_veh = '[~COLOR_YELLOWSTRONG~E~q~] - Store Vehicle',
-        armory = 'Armory',
-        enter_armory = '[~COLOR_YELLOWSTRONG~E~q~] Armory',
-        finger_scan = 'Fingerprint Scanning',
-        scan_fingerprint = '[~COLOR_YELLOWSTRONG~E~q~] Scan Fingerprint',
-        trash = 'Trash',
-        trash_enter = '[~COLOR_YELLOWSTRONG~E~q~] Trash Bin',
-        stash_enter = '[~COLOR_YELLOWSTRONG~E~q~] Enter Locker',
-        target_location = 'The location of %{firstname} %{lastname} is marked on your map',
-        anklet_location = 'Anklet location',
-        new_call = 'New Call',
-        officer_down = 'Officer %{lastname} | %{callsign} Down'
+        on_duty = 'On duty.', off_duty = 'Off duty.', cuffed = '%{name} is in irons.', uncuffed = '%{name} is free.', you_cuffed = 'You are in irons.', you_uncuffed = 'The irons come off.',
+        seized = 'Seized %{n} items into evidence.', fined = 'Fined %{name} $%{amount}.', you_fined = 'Fined $%{amount}: %{reason}', jailed = '%{name} sent to Sisika for %{minutes} minutes.',
+        you_jailed = 'Sisika, %{minutes} minutes: %{reason}', released = '%{name} released.', served = 'You have served your time.', walked_back = 'The guards walk you back.',
+        bounty_paid = 'The county pays $%{amount}.',
     },
-    evidence = {
-        red_hands = 'Red hands',
-        wide_pupils = 'Wide Pupils',
-        red_eyes = 'Red Eyes',
-        weed_smell = 'Smells like weed',
-        gunpowder = 'Gunpowder in clothing',
-        chemicals = 'smells chemical',
-        heavy_breathing = 'Breathes heavily',
-        sweat = 'Sweats a lot',
-        handbleed = 'Blood on hands',
-        confused = 'Confused',
-        alcohol = 'Smells like alcohol',
-        heavy_alcohol = 'Smells very much like alcohol',
-        agitated = 'Agitated - Signs of Meth Use',
-        serial_not_visible = 'Serial number not visible...',
+    call = { backup = '%{name} needs help' },
+    ui = {
+        citizen = 'Stranger', cuff = 'Cuff', uncuff = 'Uncuff', escort = 'Escort / let go', search = 'Search', seize = 'Seize contraband', fine = 'Fine', jail = 'Send to Sisika', release = 'Release',
+        amount = 'Amount ($)', reason = 'Reason', minutes = 'Minutes', desk = 'The desk', turnin = 'Turn in a bounty', armoury = 'Armoury', evidence = 'Evidence locker', open = 'Open',
+        desk_kicker = 'Station desk', hint_close = 'leave', close = 'Leave', badge = 'Badge', on_duty = 'On duty now', nobody_on_duty = 'Nobody on duty.', go_on_duty = 'Go on duty', go_off_duty = 'Go off duty',
+        board = 'Bounty board', citizen_id = 'Citizen id', for_what = 'For what', post = 'Post', pull = 'Pull', posted_by = 'posted by', board_empty = 'No names on the board.',
     },
-    menu = {
-        garage_title = 'Police Vehicles',
-        close = '⬅ Close Menu',
-        impound = 'Impounded Vehicles',
-        pol_impound = 'Police Impound',
-        pol_garage = 'Police Garage',
-        pol_armory = 'Police Armory',
-    },
-    email = {
-        sender = 'Central Judicial Collection Agency',
-        subject = 'Debt collection',
-        message = 'Dear %{value}. %{value2}, <br /><br />The Central Judicial Collection Agency (CJCA) charged the fines you received from the police.<br />There is <strong>$%{value3}</strong> withdrawn from your account.<br /><br />Kind regards,<br />Mr. I.K. Graai',
-    },
-    commands = {
-        place_spike = 'Place Spike Strip (Police Only)',
-        license_grant = 'Grant a license to someone',
-        license_revoke = 'Revoke a license from someone',
-        place_object = 'Place/Delete An Object (Police Only)',
-        cuff_player = 'Cuff Player (Police Only)',
-        escort = 'Escort Player',
-        callsign = 'Give Yourself A Callsign',
-        clear_casign = 'Clear Area of Casings (Police Only)',
-        jail_player = 'Jail Player (Police Only)',
-        unjail_player = 'Unjail Player (Police Only)',
-        clearblood = 'Clear The Area of Blood (Police Only)',
-        seizecash = 'Seize Cash (Police Only)',
-        softcuff = 'Soft Cuff (Police Only)',
-        camera = 'View Security Camera (Police Only)',
-        flagplate = 'Flag A Plate (Police Only)',
-        unflagplate = 'Unflag A Plate (Police Only)',
-        plateinfo = 'Run A Plate (Police Only)',
-        depot = 'Impound With Price (Police Only)',
-        impound = 'Impound A Vehicle (Police Only)',
-        paytow = 'Pay Tow Driver (Police Only)',
-        paylawyer = 'Pay Lawyer (Police, Judge Only)',
-        anklet = 'Attach Tracking Anklet (Police Only)',
-        ankletlocation = 'Get the location of a persons anklet',
-        removeanklet = 'Remove Tracking Anklet (Police Only)',
-        drivinglicense = 'Seize Drivers License (Police Only)',
-        takedna = 'Take a DNA sample from a person (empty evidence bag needed) (Police Only)',
-        police_report = 'Police Report',
-        message_sent = 'Message to be sent',
-        civilian_call = 'Civilian Call',
-        emergency_call = 'New 911 Call',
-    },
-    progressbar = {
-        blood_clear = 'Clearing Blood...',
-        bullet_casing = 'Removing bullet casings..',
-        robbing = 'Robbing Person...',
-        place_object = 'Placing object..',
-        remove_object = 'Removing object..',
-    },
-    prompt = {
-        toggle_duty_status = 'Toggle duty status',
-        open_evidence_stash = 'Open Evidence Stash',
-        open_personal_stash = 'Open Personal Stash',
-        open_armory = 'Open Armory',
-    },
-}
-
-Lang = Locale:new({
-    phrases = Translations,
-    warnOnMissing = true
 })

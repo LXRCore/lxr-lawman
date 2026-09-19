@@ -1,6 +1,7 @@
 # Changelog
 
 ## 3.0.0 — 2026-09-19
+* The record book: every fine, sentence and seizure is written down by itself; the desk shows open warrants (served by a jailing or by hand) and looks anyone up by name or id, with notes and warrants the law writes. A fine the citizen cannot pay is written as owed and settled at any station desk (`Settle your fines`). `Config.Records`, exports `Record / OpenWarrants / RecordsOf`, event `lxr:lawman:warrant`.
 * Fix: `LXRCore.PlayerData` stays current — the core object comes back as a copy, so cash, job and metadata never changed after login in this resource. It now listens to `lxr:client:data` / `lxr:client:unloaded` and refreshes its copy.
 * LXRCore v3 release line: every resource ships as 3.0.0 from here (the entries below are the road to it).
 

@@ -75,7 +75,16 @@ Config.Cuffs = {
 -- ████████████████████████ FINES & JAIL ══════════════════════════════════════════
 -- ████████████████████████████████████████████████████████████████████████████████
 -- 1899: a Valentine justice fined drunkenness $5, assault $10–25, horse theft was prison.
-Config.Fines = { min = 0.25, max = 250, account = 'cash', fallbackAccount = 'bank', toSociety = true }
+Config.Fines = { min = 0.25, max = 250, account = 'cash', fallbackAccount = 'bank', toSociety = true,
+    unpaidBecomesRecord = true }   -- a fine the citizen cannot pay is written into the record book as owed; they settle it at any station desk
+
+-- the record book: every fine, sentence and seizure is written down by itself; the law adds notes and warrants
+Config.Records = {
+    enabled = true,
+    keepDays = 0,            -- 0 = forever; otherwise closed entries older than this are pruned at boot
+    warrantMaxDays = 30,     -- an open warrant expires after this many days (0 = never)
+    maxSearch = 30,
+}
 
 Config.Jail = {
     place = { coords = vector4(3369.56, -723.59, 44.31, 180.0), label = 'Sisika Penitentiary' },   -- the yard

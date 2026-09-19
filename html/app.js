@@ -43,7 +43,49 @@
       const btn = row.querySelector('button'); if (btn) btn.addEventListener('click', () => act('pull', { id: x.id }));
       b.appendChild(row);
     });
+    renderWarrants();
   }
+  // ── warrants and the record book
+  function renderWarrants() {
+    const w = $('warrants'); w.innerHTML = '';
+    const show = D.records && D.canPost;
+    $('warrants-head').classList.toggle('lxr-hidden', !show); w.classList.toggle('lxr-hidden', !show);
+    $('records-head').classList.toggle('lxr-hidden', !show); $('records').classList.toggle('lxr-hidden', !show);
+    if (!show) return;
+    const list = D.warrants || []; $('warrants-count').textContent = pad(list.length);
+    if (!list.length) w.innerHTML = `<div class="lw-empty">${esc(t('ui.no_warrants'))}</div>`;
+    list.forEach((x, i) => {
+      const row = document.createElement('div'); row.className = 'lw-row';
+      row.innerHTML = `<span class="lw-row__i">${pad(i + 1)}</span><div><div class="lw-row__name">${esc(x.name)}</div><div class="lw-row__sub">${esc(x.text || '')}${x.posted_by ? ' · ' + esc(x.posted_by) : ''} · ${esc(when(x.created_at))}</div></div><span></span><button class="lxr-btn lxr-btn-ghost lxr-btn-sm">${esc(t('ui.serve'))}</button>`;
+      row.querySelector('button').addEventListener('click', async () => { const r = await post('warrant_close', { id: x.id }); if (r.ok) { D.warrants = r.data || []; renderWarrants(); sound('NAV_UP'); } });
+      w.appendChild(row);
+    });
+    $('r-kind').options[0].textContent = t('ui.kind_note'); $('r-kind').options[1].textContent = t('ui.kind_warrant');
+    $('r-text').placeholder = t('ui.what_happened'); $('rec-q').placeholder = t('ui.name_or_id');
+  }
+  function renderRecords(list) {
+    const h = $('records'); h.innerHTML = '';
+    if (!list.length) { h.innerHTML = `<div class="lw-empty">${esc(t('ui.no_records'))}</div>`; $('rec-add').classList.add('lxr-hidden'); return; }
+    $('rec-add').classList.remove('lxr-hidden'); $('r-cid').value = list[0].citizenid;
+    list.forEach((x) => {
+      const row = document.createElement('div'); row.className = 'lw-row lw-row--rec';
+      const meta = [t('ui.kind_' + x.kind), x.status && x.status !== 'closed' ? t('ui.status_' + x.status) : '', x.amount > 0 ? '$' + money(x.amount) : '', x.minutes > 0 ? x.minutes + ' min' : '', x.posted_by || '', when(x.created_at)].filter(Boolean).join(' · ');
+      row.innerHTML = `<span class="lw-row__i lw-row__i--${esc(x.kind)}"></span><div><div class="lw-row__name">${esc(x.name)} <span class="lxr-mono lxr-t-smoke">${esc(x.citizenid)}</span></div><div class="lw-row__sub">${esc(x.text || '')} — ${esc(meta)}</div></div>`;
+      h.appendChild(row);
+    });
+  }
+  async function lookUp() { const needle = $('rec-q').value.trim(); if (!needle) return; const r = await post('records', { needle }); if (r.ok) { renderRecords(r.data || []); sound('NAV_UP'); } else if (r.why) toast(t('error.' + r.why), true); }
+  $('rec-go').addEventListener('click', lookUp);
+  $('rec-q').addEventListener('keydown', (e) => { if (e.key === 'Enter') lookUp(); });
+  $('r-go').addEventListener('click', async () => {
+    const body = { citizenid: $('r-cid').value, kind: $('r-kind').value, text: $('r-text').value.trim() };
+    if (!body.text) return;
+    const r = await post('record', body);
+    if (!r.ok) { if (r.why) toast(t('error.' + r.why), true); return; }
+    $('r-text').value = ''; renderRecords(r.data || []); sound('NAV_UP');
+    if (body.kind === 'warrant') act('duty_refresh');
+  });
+
   async function act(name, body) {
     const r = await post(name, body);
     if (!r.ok) { if (r.why) toast(t('error.' + r.why), true); return; }

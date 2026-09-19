@@ -85,6 +85,109 @@ end
 -- ═══════════════════════════════════════════════════════════════════════════════
 -- 🏛️ STATION: duty, armoury, evidence, desk
 -- ═══════════════════════════════════════════════════════════════════════════════
+-- ═══════════════════════════════════════════════════════════════════════════════
+-- 📖 THE RECORD BOOK — charges, notes, warrants, owed fines; written by play, read at the desk
+-- ═══════════════════════════════════════════════════════════════════════════════
+LXRCore.DB.RegisterMigration(RES, '0002_records', [[
+CREATE TABLE IF NOT EXISTS `lxr_law_records` (
+  `id` INT NOT NULL AUTO_INCREMENT,
+  `citizenid` VARCHAR(50) NOT NULL,
+  `name` VARCHAR(100) NOT NULL,
+  `kind` VARCHAR(16) NOT NULL,
+  `text` VARCHAR(255) DEFAULT NULL,
+  `amount` DECIMAL(10,2) NOT NULL DEFAULT 0,
+  `minutes` INT NOT NULL DEFAULT 0,
+  `status` VARCHAR(16) NOT NULL DEFAULT 'closed',
+  `posted_by` VARCHAR(100) DEFAULT NULL,
+  `station` VARCHAR(32) DEFAULT NULL,
+  `created_at` TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  `closed_at` TIMESTAMP NULL DEFAULT NULL,
+  PRIMARY KEY (`id`), KEY `cid` (`citizenid`), KEY `kind_status` (`kind`, `status`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+]])
+local function record(T, kind, text, by, extra)
+    if not Config.Records.enabled then return end
+    extra = extra or {}
+    local cid = type(T) == 'table' and T.PlayerData.citizenid or tostring(T)
+    local name = type(T) == 'table' and nameOf(T) or (extra.name or cid)
+    LXRCore.DB.InsertAsync('INSERT INTO lxr_law_records (citizenid, name, kind, text, amount, minutes, status, posted_by, station) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)',
+        { cid, name, kind, tostring(text or ''):gsub('[%c<>]', ''):sub(1, 255), tonumber(extra.amount) or 0, tonumber(extra.minutes) or 0, extra.status or 'closed', by and nameOf(by) or nil, extra.station })
+end
+local function closeRecords(cid, kind, status)
+    LXRCore.DB.UpdateAsync('UPDATE lxr_law_records SET status = ?, closed_at = NOW() WHERE citizenid = ? AND kind = ? AND status = ?', { status or 'closed', cid, kind, 'open' })
+end
+local function openWarrants()
+    return LXRCore.DB.Query('SELECT id, citizenid, name, text, posted_by, created_at FROM lxr_law_records WHERE kind = ? AND status = ? ORDER BY created_at DESC LIMIT 100', { 'warrant', 'open' }) or {}
+end
+local function recordsOf(needle)
+    needle = tostring(needle or ''):gsub('[%%%c<>_]', ''):sub(1, 60)
+    if needle == '' then return {} end
+    return LXRCore.DB.Query('SELECT * FROM lxr_law_records WHERE citizenid = ? OR name LIKE ? ORDER BY created_at DESC LIMIT ?', { needle, '%' .. needle .. '%', Config.Records.maxSearch or 30 }) or {}
+end
+local function owedBy(cid)
+    return LXRCore.DB.Query('SELECT id, amount, text, created_at FROM lxr_law_records WHERE citizenid = ? AND kind = ? AND status = ?', { cid, 'fine', 'open' }) or {}
+end
+CreateThread(function()
+    if not Config.Records.enabled then return end
+    if (Config.Records.warrantMaxDays or 0) > 0 then
+        LXRCore.DB.UpdateAsync('UPDATE lxr_law_records SET status = ?, closed_at = NOW() WHERE kind = ? AND status = ? AND created_at < DATE_SUB(NOW(), INTERVAL ? DAY)', { 'expired', 'warrant', 'open', Config.Records.warrantMaxDays })
+    end
+    if (Config.Records.keepDays or 0) > 0 then
+        LXRCore.DB.UpdateAsync('DELETE FROM lxr_law_records WHERE status <> ? AND created_at < DATE_SUB(NOW(), INTERVAL ? DAY)', { 'open', Config.Records.keepDays })
+    end
+end)
+LXR.RPC.Register('lxr-lawman:records:search', function(src, stationId, needle)
+    if limited(src) then return false, 'rate' end
+    local P, st = player(src), L.Station(stationId)
+    if not P or not st or not L.IsLaw(P.PlayerData.job) then return false, 'not_law' end
+    return true, recordsOf(needle)
+end)
+LXR.RPC.Register('lxr-lawman:records:add', function(src, stationId, citizenid, kind, text)
+    if limited(src) then return false, 'rate' end
+    local P, st = player(src), L.Station(stationId)
+    if not P or not st or not L.IsLaw(P.PlayerData.job) then return false, 'not_law' end
+    if kind ~= 'note' and kind ~= 'warrant' then return false, 'invalid' end
+    local T = LXRCore.Functions.GetPlayerByCitizenId(citizenid) or LXRCore.Functions.GetOfflinePlayerByCitizenId(citizenid)
+    if not T then return false, 'no_such_name' end
+    record(T, kind, text, P, { status = kind == 'warrant' and 'open' or 'closed', station = st.id })
+    if kind == 'warrant' then LXRCore.Emit('lxr:lawman:warrant', nil, citizenid, src, text) end
+    log('record ' .. kind, { source = src, target = citizenid })
+    return true, recordsOf(citizenid)
+end)
+LXR.RPC.Register('lxr-lawman:records:close', function(src, stationId, id)
+    if limited(src) then return false, 'rate' end
+    local P, st = player(src), L.Station(stationId)
+    if not P or not st or not L.IsLaw(P.PlayerData.job) then return false, 'not_law' end
+    LXRCore.DB.Update('UPDATE lxr_law_records SET status = ?, closed_at = NOW() WHERE id = ? AND status = ?', { 'closed', tonumber(id) or -1, 'open' })
+    return true, openWarrants()
+end)
+-- a citizen settles what they owe at any station desk
+LXR.RPC.Register('lxr-lawman:records:pay', function(src, stationId)
+    if limited(src) then return false, 'rate' end
+    local P, st = player(src), L.Station(stationId)
+    if not P or not st then return false, 'invalid' end
+    if not nearCoords(src, st.desk) then return false, 'too_far' end
+    local owed = owedBy(P.PlayerData.citizenid)
+    local total = 0
+    for _, r in ipairs(owed) do total = total + (tonumber(r.amount) or 0) end
+    if total <= 0 then return false, 'nothing_owed' end
+    if not P.Functions.RemoveMoney(Config.Fines.account, total, 'fines settled') then
+        if not (Config.Fines.fallbackAccount and P.Functions.RemoveMoney(Config.Fines.fallbackAccount, total, 'fines settled')) then return false, 'cannot_pay', total end
+    end
+    closeRecords(P.PlayerData.citizenid, 'fine', 'paid')
+    if Config.Fines.toSociety and GetResourceState('lxr-bank') == 'started' and st.jobs[1] then exports['lxr-bank']:MoveBook('society_' .. st.jobs[1], total, P.PlayerData.citizenid, 'fines settled') end
+    log('fines settled', { source = src, amount = total })
+    return true, total
+end)
+LXR.RPC.Register('lxr-lawman:records:owed', function(src)
+    local P = player(src)
+    if not P then return false, 'invalid' end
+    local owed = owedBy(P.PlayerData.citizenid)
+    local total = 0
+    for _, r in ipairs(owed) do total = total + (tonumber(r.amount) or 0) end
+    return true, total, owed
+end)
+
 local function desk(src)
     local P = player(src)
     local job = P.PlayerData.job
@@ -96,7 +199,7 @@ local function desk(src)
         end
     end
     return { station = station and { id = station.id, label = station.label }, job = { name = job.name, label = LXRShared.Jobs[job.name] and LXRShared.Jobs[job.name].label or job.name, grade = job.grade.name, onduty = job.onduty },
-             onDuty = onDuty, bounties = Config.Bounties.enabled and board() or {}, canPost = L.IsLaw(job), limits = { bountyMin = Config.Bounties.min, bountyMax = Config.Bounties.max, fineMin = Config.Fines.min, fineMax = Config.Fines.max, jailMax = Config.Jail.maxMinutes } }
+             onDuty = onDuty, bounties = Config.Bounties.enabled and board() or {}, canPost = L.IsLaw(job), warrants = Config.Records.enabled and L.IsLaw(job) and openWarrants() or {}, records = Config.Records.enabled, limits = { bountyMin = Config.Bounties.min, bountyMax = Config.Bounties.max, fineMin = Config.Fines.min, fineMax = Config.Fines.max, jailMax = Config.Jail.maxMinutes } }
 end
 
 LXR.RPC.Register('lxr-lawman:desk', function(src, stationId)
@@ -218,6 +321,7 @@ RegisterNetEvent('lxr-lawman:server:seize', function(targetId)
     end
     if GetResourceState('lxr-weapons') == 'started' then exports['lxr-weapons']:Disarm(T.PlayerData.source, 'seized') end
     notify(src, 'info.seized', 'success', { n = n })
+    if n > 0 then record(T, 'seizure', tostring(n) .. ' contraband', O, { station = st and st.id }) end
     LXRCore.Emit('lxr:lawman:seized', nil, T.PlayerData.source, src, n)
 end)
 
@@ -234,8 +338,18 @@ RegisterNetEvent('lxr-lawman:server:fine', function(targetId, amount, reason)
     local acc = Config.Fines.account
     if not T.Functions.RemoveMoney(acc, amount, 'fine:' .. reason) then
         acc = Config.Fines.fallbackAccount
-        if not acc or not T.Functions.RemoveMoney(acc, amount, 'fine:' .. reason) then return notify(src, 'error.cannot_pay', 'error') end
+        if not acc or not T.Functions.RemoveMoney(acc, amount, 'fine:' .. reason) then
+            if Config.Fines.unpaidBecomesRecord then
+                record(T, 'fine', reason, O, { amount = amount, status = 'open', station = (L.StationFor(O.PlayerData.job.name) or {}).id })
+                notify(src, 'info.fine_owed', 'inform', { name = nameOf(T), amount = ('%.2f'):format(amount) })
+                notify(T.PlayerData.source, 'info.you_owe', 'inform', { amount = ('%.2f'):format(amount), reason = reason })
+                LXRCore.Emit('lxr:lawman:fined', nil, T.PlayerData.source, src, amount, reason, false)
+                return
+            end
+            return notify(src, 'error.cannot_pay', 'error')
+        end
     end
+    record(T, 'fine', reason, O, { amount = amount, status = 'paid', station = (L.StationFor(O.PlayerData.job.name) or {}).id })
     if Config.Fines.toSociety and GetResourceState('lxr-bank') == 'started' then exports['lxr-bank']:MoveBook('society_' .. O.PlayerData.job.name, amount, O.PlayerData.citizenid, 'fine: ' .. nameOf(T)) end
     notify(src, 'info.fined', 'success', { name = nameOf(T), amount = ('%.2f'):format(amount) })
     notify(T.PlayerData.source, 'info.you_fined', 'inform', { amount = ('%.2f'):format(amount), reason = reason })
@@ -275,6 +389,8 @@ RegisterNetEvent('lxr-lawman:server:jail', function(targetId, minutes, reason)
     if not minutes then return notify(src, 'error.bad_sentence', 'error') end
     reason = tostring(reason or ''):gsub('[%c<>]', ''):sub(1, 120)
     jail(T, minutes, src, reason)
+    record(T, 'sentence', reason, O, { minutes = minutes, station = (L.StationFor(O.PlayerData.job.name) or {}).id })
+    closeRecords(T.PlayerData.citizenid, 'warrant', 'served')
     local paid = Config.Bounties.enabled and Config.Bounties.payOn == 'jail' and payBounty(T, src) or 0
     notify(src, 'info.jailed', 'success', { name = nameOf(T), minutes = minutes })
     notify(T.PlayerData.source, 'info.you_jailed', 'inform', { minutes = minutes, reason = reason })
@@ -362,6 +478,9 @@ exports('Cuff', function(src, on) local T = player(src) if T then setCuffed(T, o
 exports('Jail', function(src, minutes, reason) local T = player(src) local m = L.Sentence(minutes) if T and m then jail(T, m, nil, reason or 'export') return true end return false end)
 exports('Release', function(src) local T = player(src) if T then release(T, 'export') return true end return false end)
 exports('Board', board)
+exports('Record', function(citizenid, kind, text, extra) record(citizenid, kind or 'note', text, nil, extra) return true end)
+exports('OpenWarrants', openWarrants)
+exports('RecordsOf', recordsOf)
 exports('PostBounty', function(citizenid, amount, reason, by)
     local a = L.Bounty(amount) if not a then return false end
     local T = LXRCore.Functions.GetPlayerByCitizenId(citizenid) or LXRCore.Functions.GetOfflinePlayerByCitizenId(citizenid)

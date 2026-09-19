@@ -134,6 +134,10 @@ CreateThread(function()
     for _, s in ipairs(Config.Stations) do
         I:AddPoint('lxr-lawman:desk:' .. s.id, s.desk, { label = s.label, distance = Config.Security.promptDistance, options = {
             { label = Lang:t('ui.desk'), key = 'J', canInteract = function() return L.IsLaw(me().job, true) or L.IsHunter(me().job) end, onSelect = function() openDesk(s) end },
+            { label = Lang:t('ui.pay_fines'), key = 'E', canInteract = function() return not (L.IsLaw(me().job, true) or L.IsHunter(me().job)) end, onSelect = function()
+                local ok, total = LXR.RPC.Server('lxr-lawman:records:pay', s.id)
+                if ok then toast('info.fines_paid', 'success', { amount = ('%.2f'):format(total or 0) }) else toast('error.' .. tostring(total), 'error', { amount = ('%.2f'):format(0) }) end
+            end },
             { label = Lang:t('ui.turnin'), key = 'E', canInteract = function() return L.IsHunter(me().job) or L.IsLaw(me().job) end, onSelect = function()
                 -- the nearest cuffed player is the one being brought in
                 local best, bd
@@ -194,8 +198,12 @@ local function rpc(name, ...)
 end
 RegisterNUICallback('close', function(_, cb) closeDesk() cb({ ok = true }) end)
 RegisterNUICallback('duty', function(_, cb) cb(rpc('duty')) end)
+RegisterNUICallback('duty_refresh', function(_, cb) if not session then return cb({ ok = false }) end local ok, data = LXR.RPC.Server('lxr-lawman:desk', session.station.id) cb({ ok = ok, data = ok and data or nil }) end)
 RegisterNUICallback('post', function(d, cb) cb(rpc('bounty:post', d.citizenid, d.amount, d.reason)) end)
 RegisterNUICallback('pull', function(d, cb) cb(rpc('bounty:pull', d.id)) end)
+RegisterNUICallback('records', function(d, cb) cb(rpc('records:search', d.needle)) end)
+RegisterNUICallback('record', function(d, cb) cb(rpc('records:add', d.citizenid, d.kind, d.text)) end)
+RegisterNUICallback('warrant_close', function(d, cb) cb(rpc('records:close', d.id)) end)
 RegisterNUICallback('sound', function(d, cb) PlaySoundFrontend(d.name or 'NAV_UP', d.set or 'HUD_SHOP_SOUNDSET', true, 0) cb({}) end)
 
 RegisterCommand('backup', function() if isLaw() then TriggerServerEvent('lxr-lawman:server:backup') end end, false)

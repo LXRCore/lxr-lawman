@@ -25,6 +25,7 @@ Every power is an lxr-interact option; every decision is the server's.
 * **Jail** — teleported to the yard, walked back if they stray, sentence
   counts down while online (`lxr:lawman:jail:tick` for a work loop),
   released at the gate.
+* **The record book** — fines, sentences and seizures write themselves; the desk lists open warrants (served when the name is jailed, or by hand) and looks anyone up by name or id; the law adds notes and warrants. A fine that cannot be paid is written as owed and settled by the citizen at any station desk. `Config.Records`; exports `Record(citizenid, kind, text, extra)`, `OpenWarrants()`, `RecordsOf(needle)`.
 * **Bounties** — posted by the law, paid on jailing; bounty hunters read the
   board and turn a cuffed name in at any desk.
 * **Armoury / evidence** — lxr-inventory stashes per job and per station;
